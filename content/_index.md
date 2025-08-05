@@ -2,9 +2,9 @@
 title = "Latest posts"
 
 [extra]
-header = { title = "Hi, I'm YOUR_NAME! 👋", img = "img/profile.webp", img_alt = "YOUR_NAME" }
+header = { title = "Normal SubGroup! 👋", img = "img/profile.webp", img_alt = "Normal SubGroup" }
 section_path = "blog/_index.md"
 max_posts = 5
 +++
 
-Welcome to my personal site!
+Welcome to our team site!
