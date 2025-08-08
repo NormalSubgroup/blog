@@ -1,13 +1,13 @@
-base_url = "https://YOUR_URL.TLD"
-title = "site title"
-description = "YOUR_SITE_DESCRIPTION"
-author = "YOUR_NAME"
+base_url = "https://blog.cauchy.top"
+title = "正规子群"
+description = "Normal SubGroup team blog"
+author = "Normal SubGroup"
 theme = "tabi"
 generate_feeds = true
 compile_sass = true
 minify_html = true
-build_search_index = true
-default_language = "en"
+build_search_index = false
+default_language = "zh-Hans"
 taxonomies = [{name = "tags", feed = true}]
 
 
@@ -25,7 +25,7 @@ include_content = true
 # truncate_content_length = 100
 # Wether to produce the search index as a javascript file or as a JSON file.
 # Accepted value "elasticlunr_javascript" or "elasticlunr_json".
-index_format = "elasticlunr_json"
+# index_format = "elasticlunr_json"
 
 
 [markdown]
@@ -57,7 +57,7 @@ theme_switcher = true
 
 # This setting determines the default theme on load ("light" or "dark").
 # To follow the user's OS theme, leave it empty or unset.
-default_theme = ""
+default_theme = "light"
 
 # Choose the colourscheme (skin) for the theme. Default is "teal".
 # Skin available: blue, lavender, mint, red, sakura, teal, monochrome, lowcontrast_orange, lowcontrast_peach, lowcontrast_pink, indigo_ingot, evangelion
@@ -66,7 +66,7 @@ default_theme = ""
 # contrast (in light theme) for readability and might not be suitable for all users.
 # Furthermore, low contrasting elements will affect your Google Lighthouse rating.
 # All other skins have optimal contrast.
-skin = ""
+skin = "sakura"
 
 # Set browser theme colour. Can be a single colour or [light, dark].
 # Note: Bright colors may be ignored in dark mode.
@@ -89,7 +89,7 @@ stylesheets = []
 # Remote repository for your Zola site.
 # Used for `show_remote_changes` and `show_remote_source` (see below).
 # Supports GitHub, GitLab, Gitea, and Codeberg.
-# remote_repository_url = "https://github.com/welpo/tabi"
+remote_repository_url = "https://github.com/NormalSubgroup/blog"
 # Set this to "auto" to try and auto-detect the platform based on the repository URL.
 # Accepted values are "github", "gitlab", "gitea", and "codeberg".
 remote_repository_git_platform = "auto"  # Defaults to "auto".
@@ -195,11 +195,11 @@ quick_navigation_buttons = true
 
 # Date format used when listing posts (main page, /blog section, tag posts list…)
 # Default is "6th July 2049" in English and "%d %B %Y" in other languages.
-# long_date_format = "%d %B %Y"
+long_date_format = "%Y年%m月%d日"
 
 # Date format used for blog posts.
 # Default is "6th July 2049" in English and "%-d %B %Y" in other languages.
-short_date_format = ""
+short_date_format = "%Y-%m-%d"
 
 # Custom separator used in title tag and posts metadata (between date, time to read, and tags).
 separator = "•"
