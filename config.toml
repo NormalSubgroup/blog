@@ -78,7 +78,7 @@ skin = "sakura"
 # These stylesheets should be located in your site's `static` directory.
 # Example: stylesheets = ["extra1.css", "path/extra2.css"]
 # You can load a stylesheet for a single post by adding it to the [extra] section of the post's front matter, following this same format.
-stylesheets = []
+stylesheets = ["/css/wide.css"]
 
 # Sets the default canonical URL for all pages.
 # Individual pages can override this in the [extra] section using canonical_url.

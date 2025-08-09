@@ -1,0 +1,12 @@
+/* Override tabi layout widths */
+:root {
+  --max-layout-width: 1200px;   /* default 1000px */
+  --normal-layout-width: 800px; /* default 600px */
+  --medium-layout-width: 560px; /* default 400px */
+}
+
+@media (min-width: 1101px) {
+  .bloglist-container { max-width: 85% !important; }
+  iframe { max-width: 85% !important; }
+}
+
