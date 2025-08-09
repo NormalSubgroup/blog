@@ -352,6 +352,8 @@ if __name__ == "__main__":
     solve()
 ```
 
+# Crypto
+
 ## Catch
 
 题目
@@ -1226,9 +1228,9 @@ $$
 因此 20 字节字符串对应的整数范围为
 
 $$
-m_{\text{min}} = \underbrace{0x20\cdots20}_{20\text{ 个空格}} ,
+m_{\text{min}} = \underbrace{0x20\cdots20}_{20\text{ 个空格}} 
 \qquad
-m_{\text{max}} = \underbrace{0x7E\cdots7E}_{20\text{ 个波浪号}} .
+m_{\text{max}} = \underbrace{0x7E\cdots7E}_{20\text{ 个波浪号}} 
 $$
 
 ### 3.2 约束的整数解
