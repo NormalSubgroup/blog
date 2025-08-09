@@ -48,6 +48,20 @@ tags = ["idekCTF", "Team", "WriteUp", "Cryptography", "Reverse", "Web"]
 
 ## constructor
 
+静态分析
+
+$\text{decrypted}[i] = \text{encrypted}[i] \bigoplus (i * 0x1f) \bigoplus (i >> 1) \bigoplus 0x5a$
+
+> i * 0x1f 的计算结果会发生溢出，我们只需取其低8位即可，这和寄存器 cl 的行为一致
+
+然后导出数据
+
+> 使用 `dd` 导出 42 byte
+
+```bash
+dd if=./chall bs=1 skip=$((0x3040)) count=42 2>/dev/null | xxd -i
+```
+
 ```python
 def solve_flag():
     """
@@ -91,7 +105,6 @@ def solve_flag():
 
     return decrypted_flag
 
-# --- Run the solver ---
 final_flag = solve_flag()
 print(f"Decrypted Flag: {final_flag}")
 ```
@@ -130,6 +143,150 @@ print(flag)
 # misc
 
 ## gacha-gate
+
+题目
+
+```python
+#!/usr/bin/env python3
+import contextlib
+import os
+import random
+import re
+import signal
+import sys
+
+from z3 import ArithRef, BitVec, BitVecRef, BitVecVal, Solver, simplify, unsat
+
+WIDTH = 32
+OPS = ['~', '&', '^', '|']
+MAX_DEPTH = 10
+FLAG = os.getenv('FLAG', 'idek{fake_flag}')
+VARS = set('iIl')
+
+
+def rnd_const() -> tuple[str, BitVecRef]:
+    v = random.getrandbits(WIDTH)
+    return str(v), BitVecVal(v, WIDTH)
+
+
+def rnd_var() -> tuple[str, BitVecRef]:
+    name = ''.join(random.choices(tuple(VARS), k=10))
+    return name, BitVec(name, WIDTH)
+
+
+def combine(
+    op: str,
+    left: tuple[str, BitVecRef],
+    right: tuple[str, BitVecRef] | None = None,
+) -> tuple[str, ArithRef]:
+    if op == '~':
+        s_left, z_left = left
+        return f'(~{s_left})', ~z_left
+    s_l, z_l = left
+    s_r, z_r = right
+    return f'({s_l} {op} {s_r})', {
+        '&': z_l & z_r,
+        '^': z_l ^ z_r,
+        '|': z_l | z_r,
+    }[op]
+
+
+def random_expr(depth: int = 0) -> tuple[str, ArithRef]:
+    if depth >= MAX_DEPTH or random.random() < 0.1:
+        return random.choice((rnd_var, rnd_const))()
+    op = random.choice(OPS)
+    if op == '~':
+        return combine(op, random_expr(depth + 1))
+    return combine(op, random_expr(depth + 1), random_expr(depth + 1))
+
+
+TOKEN_RE = re.compile(r'[0-9]+|[iIl]+|[~&^|]')
+
+
+def parse_rpn(s: str) -> ArithRef:
+    tokens = TOKEN_RE.findall(s)
+    if not tokens:
+        raise ValueError('empty input')
+
+    var_cache: dict[str, BitVecRef] = {}
+    stack: list[BitVecRef] = []
+
+    for t in tokens:
+        if t.isdigit():
+            stack.append(BitVecVal(int(t), WIDTH))
+        elif re.fullmatch(r'[iIl]+', t):
+            if t not in var_cache:
+                var_cache[t] = BitVec(t, WIDTH)
+            stack.append(var_cache[t])
+        elif t in OPS:
+            if t == '~':
+                if len(stack) < 1:
+                    raise ValueError('stack underflow')
+                a = stack.pop()
+                stack.append(~a)
+            else:
+                if len(stack) < 2:
+                    raise ValueError('stack underflow')
+                b = stack.pop()
+                a = stack.pop()
+                stack.append({'&': a & b, '^': a ^ b, '|': a | b}[t])
+        else:
+            raise ValueError(f'bad token {t}')
+
+    if len(stack) != 1:
+        raise ValueError('malformed expression')
+    return stack[0]
+
+
+def equivalent(e1: ArithRef, e2: ArithRef) -> tuple[bool, Solver]:
+    s = Solver()
+    s.set(timeout=5000)
+    s.add(simplify(e1) != simplify(e2))
+    return s.check() == unsat, s
+
+
+def _timeout_handler(_: int, __) -> None:
+    raise TimeoutError
+
+
+def main() -> None:
+    signal.signal(signal.SIGALRM, _timeout_handler)
+    print('lets play a game!')
+
+    for _ in range(50):
+        random.seed()
+        expr_str, expr_z3 = random_expr()
+        print(expr_str, flush=True)
+
+        signal.alarm(5)
+        try:
+            line = sys.stdin.readline()
+            signal.alarm(0)
+        except TimeoutError:
+            print('too slow!')
+            return
+
+        try:
+            rpn_z3 = parse_rpn(line.strip())
+        except Exception as e:
+            print('invalid input:', e)
+            return
+
+        print('let me see..')
+        is_eq, s = equivalent(expr_z3, rpn_z3)
+        if not is_eq:
+            print('wrong!')
+            with contextlib.suppress(BaseException):
+                print('counter example:', s.model())
+            return
+
+    print(FLAG)
+
+
+if __name__ == '__main__':
+    main()
+
+```
 
 ![](img/misc_gacha-gate.png)
 
@@ -194,6 +351,98 @@ if __name__ == "__main__":
 ```
 
 ## Catch
+
+题目
+
+```python
+from Crypto.Random.random import randint, choice
+import os
+
+# In a realm where curiosity roams free, our fearless cat sets out on an epic journey.
+# Even the cleverest feline must respect the boundaries of its world—this magical limit holds all wonders within.
+limit = 0xe5db6a6d765b1ba6e727aa7a87a792c49bb9ddeb2bad999f5ea04f047255d5a72e193a7d58aa8ef619b0262de6d25651085842fd9c385fa4f1032c305f44b8a4f92b16c8115d0595cebfccc1c655ca20db597ff1f01e0db70b9073fbaa1ae5e489484c7a45c215ea02db3c77f1865e1e8597cb0b0af3241cd8214bd5b5c1491f
+
+# Through cryptic patterns, our cat deciphers its next move.
+def walking(x, y, part):
+    # Each step is guided by a fragment of the cat's own secret mind.
+    epart = [int.from_bytes(part[i:i+2], "big") for i in range(0, len(part), 2)]
+    xx = epart[0] * x + epart[1] * y
+    yy = epart[2] * x + epart[3] * y
+    return xx, yy
+
+# Enter the Cat: curious wanderer and keeper of hidden paths.
+class Cat:
+    def __init__(self):
+        # The cat's starting position is born of pure randomness.
+        self.x = randint(0, 2**256)
+        self.y = randint(0, 2**256)
+        # Deep within, its mind holds a thousand mysterious fragments.
+        while True:
+            self.mind = os.urandom(1000)
+            self.step = [self.mind[i:i+8] for i in range(0, 1000, 8)]
+            if len(set(self.step)) == len(self.step):
+                break
+
+    # The epic chase begins: the cat ponders and strides toward the horizon.
+    def moving(self):
+        for _ in range(30):
+            # A moment of reflection: choose a thought from the cat's endless mind.
+            part = choice(self.step)
+            self.step.remove(part)
+            # With each heartbeat, the cat takes a cryptic step.
+            xx, yy = walking(self.x, self.y, part)
+            self.x, self.y = xx, yy
+            # When the wild spirit reaches the edge, it respects the boundary and pauses.
+            if self.x > limit or self.y > limit:
+                self.x %= limit
+                self.y %= limit
+                break
+
+    # When the cosmos beckons, the cat reveals its secret coordinates.
+    def position(self):
+        return (self.x, self.y)
+
+# Adventurer, your quest: find and connect with 20 elusive cats.
+for round in range(20):
+    try:
+        print(f"👉 Hunt {round+1}/20 begins!")
+        cat = Cat()
+
+        # At the start, you and the cat share the same starlit square.
+        human_pos = cat.position()
+        print(f"🐱✨ Co-location: {human_pos}")
+        print(f"🔮 Cat's hidden mind: {cat.mind.hex()}")
+
+        # But the cat, ever playful, dashes into the unknown...
+        cat.moving()
+        print("😸 The chase is on!")
+
+        print(f"🗺️ Cat now at: {cat.position()}")
+
+        # Your turn: recall the cat's secret path fragments to catch up.
+        mind = bytes.fromhex(input("🤔 Path to recall (hex): "))
+
+        # Step by step, follow the trail the cat has laid.
+        for i in range(0, len(mind), 8):
+            part = mind[i:i+8]
+            if part not in cat.mind:
+                print("❌ Lost in the labyrinth of thoughts.")
+                exit()
+            human_pos = walking(human_pos[0], human_pos[1], part)
+
+        # At last, if destiny aligns...
+        if human_pos == cat.position():
+            print("🎉 Reunion! You have found your feline friend! 🐾")
+        else:
+            print("😿 The path eludes you... Your heart aches.")
+            exit()
+    except Exception:
+        print("🙀 A puzzle too tangled for tonight. Rest well.")
+        exit()
+
+# Triumph at last: the final cat yields the secret prize.
+print(f"🏆 Victory! The treasure lies within: {open('flag.txt').read()}")
+```
 
 This is a classic "meet-in-the-middle" or search problem disguised as a random walk. However, the search space is far too large for a brute-force attack. The key lies in reversing the process and exploiting a mathematical property of the transformations.
 
@@ -340,7 +589,386 @@ if __name__ == "__main__":
 
 ## Sadness ECC
 
-如下题，直接看 `Sadness ECC - Revenge`
+题目
+
+```
+# chall.py
+from Crypto.Util.number import *
+from secret import n, xG, yG
+import ast
+
+class DummyPoint:
+    O = object()
+
+    def __init__(self, x=None, y=None):
+        if (x, y) == (None, None):
+            self._infinity = True
+        else:
+            assert DummyPoint.isOnCurve(x, y), (x, y)
+            self.x, self.y = x, y
+            self._infinity = False
+
+    @classmethod
+    def infinity(cls):
+        return cls()
+
+    def is_infinity(self):
+        return getattr(self, "_infinity", False)
+
+    @staticmethod
+    def isOnCurve(x, y):
+        return "<REDACTED>"
+
+    def __add__(self, other):
+        if other.is_infinity():
+            return self
+        if self.is_infinity():
+            return other
+
+        # ——— Distinct‑points case ———
+        if self.x != other.x or self.y != other.y:
+            dy    = self.y - other.y
+            dx    = self.x - other.x
+            inv_dx = pow(dx, -1, n)
+            prod1 = dy * inv_dx
+            s     = prod1 % n
+
+            inv_s = pow(s, -1, n)
+            s3    = pow(inv_s, 3, n)
+
+            tmp1 = s * self.x
+            d    = self.y - tmp1
+
+            d_minus    = d - 1337
+            neg_three  = -3
+            tmp2       = neg_three * d_minus
+            tmp3       = tmp2 * inv_s
+            sum_x      = self.x + other.x
+            x_temp     = tmp3 + s3
+            x_pre      = x_temp - sum_x
+            x          = x_pre % n
+
+            tmp4       = self.x - x
+            tmp5       = s * tmp4
+            y_pre      = self.y - tmp5
+            y          = y_pre % n
+
+            return DummyPoint(x, y)
+
+        dy_term       = self.y - 1337
+        dy2           = dy_term * dy_term
+        three_dy2     = 3 * dy2
+        inv_3dy2      = pow(three_dy2, -1, n)
+        two_x         = 2 * self.x
+        prod2         = two_x * inv_3dy2
+        s             = prod2 % n
+
+        inv_s         = pow(s, -1, n)
+        s3            = pow(inv_s, 3, n)
+
+        tmp6          = s * self.x
+        d2            = self.y - tmp6
+
+        d2_minus      = d2 - 1337
+        tmp7          = -3 * d2_minus
+        tmp8          = tmp7 * inv_s
+        x_temp2       = tmp8 + s3
+        x_pre2        = x_temp2 - two_x
+        x2            = x_pre2 % n
+
+        tmp9          = self.x - x2
+        tmp10         = s * tmp9
+        y_pre2        = self.y - tmp10
+        y2            = y_pre2 % n
+
+        return DummyPoint(x2, y2)
+
+    def __rmul__(self, k):
+        if not isinstance(k, int) or k < 0:
+            raise ValueError("Choose another k")
+        
+        R = DummyPoint.infinity()
+        addend = self
+        while k:
+            if k & 1:
+                R = R + addend
+            addend = addend + addend
+            k >>= 1
+        return R
+
+    def __repr__(self):
+        return f"DummyPoint({self.x}, {self.y})"
+
+    def __eq__(self, other):
+        return self.x == other.x and self.y == other.y
+
+if __name__ == "__main__":
+    G = DummyPoint(xG, yG)
+    print(f"{n = }")
+    stop = False
+    while True:
+        print("1. Get random point (only one time)\n2. Solve the challenge\n3. Exit")
+        try:
+            opt = int(input("> "))
+        except:
+            print("❓ Try again."); continue
+
+        if opt == 1:
+            if stop:
+                print("Only one time!")
+            else:
+                stop = True
+                k = getRandomRange(1, n)
+                P = k * G
+                print("Here is your point:")
+                print(P)
+
+        elif opt == 2:
+            ks = [getRandomRange(1, n) for _ in range(2)]
+            Ps = [k * G for k in ks]
+            Ps.append(Ps[0] + Ps[1])
+
+            print("Sums (x+y):", [P.x + P.y for P in Ps])
+            try:
+                ans = ast.literal_eval(input("Your reveal: "))
+            except:
+                print("Couldn't parse."); continue
+
+            if all(P == DummyPoint(*c) for P, c in zip(Ps, ans)):
+                print("Correct! " + open("flag.txt").read())
+            else:
+                print("Wrong...")
+            break
+
+        else:
+            print("Farewell.") 
+            break
+            
+```
+
+
+### 解题思路：奇异曲线上的坐标恢复
+
+本次挑战的核心在于一个自定义的、非标准的 **“椭圆曲线”** 密码系统。服务器没有直接给出点的坐标，而是给了两个随机点 $P_1$、$P_2$ 以及它们的和 $P_3=P_1+P_2$ 的 **坐标之和**（即 $x_i+y_i$）。
+我们的任务是仅根据这些和，恢复出这三个点的完整坐标。
+
+### 第一步：恢复曲线方程
+
+挑战代码中最关键的函数 `isOnCurve` 被隐藏，因此必须 **从点的加法运算 (`__add__`) 中反向推导出曲线方程**。
+点加法分为两种情况：**两点相加** 和 **点倍加**。通常点倍加的公式更简洁，是推导的突破口。
+
+下面是点倍加相关的代码（已作简化）：
+
+```python
+dy_term = self.y - 1337
+dy2     = dy_term * dy_term
+# ...
+s = (2 * self.x) * pow(3 * dy2, -1, n)
+```
+
+* `s` 表示点 $P(x,y)$ 处切线的斜率。
+可写成数学形式：
+
+$$
+s = \frac{2x}{3(y-1337)^2}\pmod n
+$$
+
+对于隐式曲线 $F(x,y)=0$ 上的任意点，切线斜率满足
+
+$$
+\frac{dy}{dx}= -\frac{\partial F/\partial x}{\partial F/\partial y}
+$$
+
+把代码里得到的斜率 $s$ 与上述公式对应，可得到假设：
+
+$$
+\begin{aligned}
+\frac{\partial F}{\partial x} &= -k\cdot 2x ,\\
+\frac{\partial F}{\partial y} &= k\cdot 3(y-1337)^2,
+\end{aligned}
+$$
+
+其中 $k$ 为常数（取 $k=-1$ 简化）。对两式分别积分得
+
+$$
+\begin{aligned}
+F(x,y) &= \int 2x\,dx = x^2 + g(y),\\
+F(x,y) &= \int -3(y-1337)^2\,dy = -(y-1337)^3 + h(x).
+\end{aligned}
+$$
+
+取常数为 0，得到 **曲线方程**
+
+$$
+\boxed{\,x^{2} \equiv (y-1337)^{3}\pmod n\,}
+$$
+
+即
+
+$$
+x^{2} \equiv (y-1337)^{3}\pmod n,
+$$
+
+它是一条 **奇异曲线**（在点 $(0,1337)$ 处有尖点），虽然不是正规椭圆曲线，但在其非奇异点仍可定义加法群。 
+
+---
+
+### 第二步：分析挑战与漏洞
+
+已知三个值 $s_1,s_2,s_3$ 满足：
+
+* $P_1=(x_1,y_1)$ 在曲线上且
+
+  $$
+  x_1+y_1 = s_1 \pmod n \quad\Rightarrow\quad y_1 = s_1 - x_1 \pmod n.
+  $$
+
+* $P_2=(x_2,y_2)$ 同理，满足
+
+  $$
+  y_2 = s_2 - x_2 \pmod n.
+  $$
+
+* $P_3=P_1+P_2 = (x_3,y_3)$ 且
+
+  $$
+  x_3 + y_3 = s_3 \pmod n .
+  $$
+
+对每个点 $P_i$ 有两条约束：
+
+1. **线性关系**
+
+   $$
+   y_i = s_i - x_i \pmod n .
+   $$
+
+2. **曲线方程**
+
+   $$
+   x_i^{2} = (y_i-1337)^{3} \pmod n .
+   $$
+
+把线性关系代入曲线方程，得到单变量三次方程
+
+$$
+\boxed{\,x_i^{2} = (s_i - x_i - 1337)^{3} \pmod n\,},
+$$
+
+每个点分别对应一个方程。单独求解这三个方程虽然可行，却忽略了**点加法**的代数关联。脚本利用了此关联，构造更强的约束来直接求解。
+
+---
+
+### 第三步：求解策略 —— 多项式结式 (Polynomial Resultant)
+
+核心思路：利用 **结式**（Resultant）消去变量，从而把多元方程系统转化为一元方程。
+
+### 1. 构造约束多项式
+
+- **点 $P_1$ 的约束**（代入 $y_1=s_1-x_1$）
+
+  $$
+  E_1(x_1) \;=\; x_1^{2} - (s_1 - x_1 - 1337)^{3}\;\equiv\;0\pmod n .
+  $$
+
+- **点 $P_2$ 的约束**
+
+  $$
+  E_2(x_2) \;=\; x_2^{2} - (s_2 - x_2 - 1337)^{3}\;\equiv\;0\pmod n .
+  $$
+
+- **点加法约束**
+  设 $P_3=(x_3,y_3)$。两点相加的（简化）公式为
+
+  $$
+  \begin{aligned}
+  \lambda & = \frac{y_2 - y_1}{x_2 - x_1},\\
+  x_3 & = \lambda^{2} - x_1 - x_2,\\
+  y_3 & = \lambda(x_1 - x_3) - y_1 .
+  \end{aligned}
+  $$
+
+  代入 $y_1=s_1-x_1$, $y_2=s_2-x_2$ 并使用 $x_3+y_3=s_3$，可得到只含 $x_1,x_2$ 的多项式
+
+  $$
+  F(x_1,x_2)=0 .
+  $$
+
+于是得到 **三方程系统**
+
+$$
+\begin{cases}
+E_1(x_1) = 0,\\
+E_2(x_2) = 0,\\
+F(x_1,x_2) = 0 .
+\end{cases}
+$$
+
+### 2. 第一次消元
+
+计算 **结式**，消去 $x_1$：
+
+$$
+R_1(x_2)=\operatorname{resultant}\big(F(x_1,x_2),\,E_1(x_1),\,x_1\big) .
+$$
+
+此时 $R_1(x_2)$ 只含变量 $x_2$，它的根即为满足前两条约束的 $x_2$。
+
+### 3. 取公共根
+
+需要 $x_2$ 同时满足
+
+$$
+R_1(x_2)=0,\qquad E_2(x_2)=0 .
+$$
+
+使用 **最大公约数**（GCD）求公共根：
+
+$$
+g(x_2)=\gcd\big(R_1(x_2),\,E_2(x_2)\big) .
+$$
+
+在唯一解的情况下，$g$ 必为一次多项式
+
+$$
+g(x_2)=c\,(x_2-x_{2,\text{sol}}) .
+$$
+
+于是可直接读取
+
+$$
+x_{2,\text{sol}} = \text{根}(g) .
+$$
+
+### 4. 回代求解
+
+* 计算 $y_2 = s_2 - x_2$（模 $n$）得到 $P_2$ 完整坐标。
+* 交换角色或再利用一次 **resultant** 可以求出 $x_1$ 与 $y_1$。
+* 最后直接调用源码中的 `__add__`（或使用上面的公式）计算
+
+  $$
+  P_3 = P_1 + P_2
+  $$
+
+  得到 $(x_3, y_3)$ 并验证 $x_3 + y_3 \equiv s_3\pmod n$。
+
+---
+
+### 小结
+
+1. **从点倍加的斜率**逆推出了奇异曲线方程
+
+   $$
+   x^{2} \equiv (y-1337)^{3}\pmod n .
+   $$
+
+2. **利用线性关系**把每个点的坐标化为单变量三次方程。
+3. **构造点加法约束**得到两变量多项式 $F(x_1,x_2)$。
+4. **利用结式与 GCD** 消除变量，得到唯一的 $x_2$（进而得到全部点的坐标）。
+
+这样即可仅凭 “坐标之和” 恢复出所有点的完整坐标，完成挑战。
+
+Exploit 如下题，直接看 `Sadness ECC - Revenge`
 
 ## Happy ECC
 
