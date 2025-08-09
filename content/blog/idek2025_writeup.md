@@ -595,7 +595,7 @@ if __name__ == "__main__":
 
 题目
 
-```
+```python
 # chall.py
 from Crypto.Util.number import *
 from secret import n, xG, yG
@@ -1293,7 +1293,7 @@ $$
 再结合 “可打印 20 字节字符串” 的物理约束，搜索空间被大幅缩小。
 Go 实现的并行搜索遍历所有满足数论约束的候选，最终得到隐藏的 **`diamond_ticket`**，即题目所求的 20 字符密钥。
 
-```golang
+```go
 package main
 
 import (
@@ -2462,7 +2462,7 @@ if __name__ == "__main__":
     main()
 ```
 
-```golang
+```go
 // Filename: solver4_final.go
 package main
 
@@ -2644,7 +2644,7 @@ deno 启动的 midi server
 
 payload:
 
-```
+```bash
 > curl https://midi-visualizer-web.chal.idek.team/static/../uploads/
 Not Found%                                                                 
 
