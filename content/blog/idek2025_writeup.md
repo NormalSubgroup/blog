@@ -9,6 +9,8 @@ tags = ["idekCTF", "Team", "WriteUp", "Cryptography", "Reverse", "Web"]
 
 大家在开赛后临时创号玩的，二进制哥们很忙，于是我们就做了一些别的题，但也遗憾在这里，只靠密码，前 24h 便来到第九名，后续没题可做了
 
+最终 22 名，还不错
+
 质量不错，也许值 65+ 权重
 
 另外，本场比赛遇到不少 Golang 可能遇到的问题，并解决了
@@ -52,17 +54,19 @@ tags = ["idekCTF", "Team", "WriteUp", "Cryptography", "Reverse", "Web"]
 
 静态分析
 
-$\text{decrypted}[i] = \text{encrypted}[i] \bigoplus (i * 0x1f) \bigoplus (i >> 1) \bigoplus 0x5a$
+$\text{decrypted}[i] = \text{encrypted}[i] \bigoplus (i * \text{0x1f}) \bigoplus (i >> 1) \bigoplus \text{0x5a}$
 
 > i * 0x1f 的计算结果会发生溢出，我们只需取其低8位即可，这和寄存器 cl 的行为一致
 
-然后导出数据
+随后导出加密数据
 
 > 使用 `dd` 导出 42 byte
 
 ```bash
 dd if=./chall bs=1 skip=$((0x3040)) count=42 2>/dev/null | xxd -i
 ```
+
+### Exploit
 
 ```python
 def solve_flag():
@@ -92,7 +96,7 @@ def solve_flag():
         # Key 2: The loop counter right-shifted by 1
         key2 = i >> 1
         
-        # Key 3: The constant 0x5a
+        # constant
         key3 = 0x5a
         
         # The decryption emulates the 32-bit 'xorl' operations
@@ -113,6 +117,8 @@ print(f"Decrypted Flag: {final_flag}")
 
 ## ski
 
+> 又出现和 CryptoCTF 类似的情况，正规子群 CN 分群看了好几次都没做出来，越南老哥薄纱了
+
 Given a SKI combinator program (program.txt) and an interpreter, the challenge encodes the flag as bits, mapping each bit to a variable (_F0, _F1, ...). Each _F{i} is set to K if the bit is 1, or (K I) if 0.
 
 The SKI expression is a sequence of similar blocks, each containing several _F... variables. The number of _F... variables in each block corresponds to a specific bit pattern.
@@ -129,6 +135,8 @@ Each check block has the form (((S ((S I) (K (K I)))) (K K)) ... ) and inside, t
 etc.
 
 script:
+
+### Exploit
 
 ```python
 import re
@@ -290,73 +298,273 @@ if __name__ == '__main__':
 
 ```
 
+
+其核心任务是将服务器生成的 **中缀表达式（Infix Expression）** 转换为 **逆波兰表达式（Reverse Polish Notation, RPN）**。服务器使用Z3求解器来验证玩家的转换是否正确，这意味着需要严格遵守逻辑等价性。
+
+---
+
+### 中缀表达式与逆波兰表达式
+
+* **中缀表达式**：我们日常使用的数学表达式，如 $A + B$ 或 $(A \land B) \lor C$。运算符位于其操作数之间。
+* **逆波兰表达式（RPN）**：又称后缀表达式，如 $A B +$ 或 $A B \land C \lor$。运算符位于其操作数之后。
+
+中缀表达式存在优先级和结合性的问题，需要括号来消除歧义。例如，$A \lor B \land C$ 究竟是 $(A \lor B) \land C$ 还是 $A \lor (B \land C)$？这取决于运算符的优先级。RPN 表达式则天然地消除了这种歧义，因为运算符的顺序严格定义了计算顺序。
+
+本题中的表达式使用了位运算符：`|` (或), `^` (异或), `&` (与), `~` (非)。它们的优先级关系为：`~` > `&` > `^` > `|`。
+
+---
+
+### 核心算法：调度场算法 (Shunting-yard Algorithm)
+
+下面 Exploit 的核心是 `shunting_yard_fix` 函数，它实现了**调度场算法**。这个算法就像一个火车站的调度场：
+* **输入（轨道）**: 中缀表达式的符号流（token）。
+* **输出（出库）**: RPN 表达式的符号流。
+* **中转站（栈）**: 一个用于临时存放运算符的栈。
+
+调度场算法的数学逻辑严格基于运算符的 **优先级（precedence）** 和 **结合性（associativity）**。
+
+#### 算法流程
+
+1.  **分词（Tokenization）**: 首先，将中缀表达式字符串分解成一个个独立的符号（tokens），包括数字、变量、运算符和括号。
+    * 例如，表达式 `((A & B) | C)` 被分解为 `(`, `(`, `A`, `&`, `B`, `)`, `|`, `C`, `)`。
+
+2.  **符号流处理**: 算法逐一处理每个 token，并根据其类型采取不同的行动。
+
+    * **操作数 (Operand)**: 如果 token 是一个操作数（数字或变量），直接将其发送到输出队列（`output` 列表）。
+        * 这遵循 RPN 的基本规则：操作数先于其运算符出现。
+
+    * **左括号 `(`**: 将左括号压入运算符栈（`op_stack`）。
+        * 括号在表达式中起着改变运算顺序的作用。将它压栈，意味着它是一个“屏障”，阻止在它内部的运算被提前执行。
+
+    * **右括号 `)`**: 从运算符栈中不断弹出运算符并发送到输出队列，直到遇到一个左括号为止。然后弹出这个左括号，但不会发送到输出队列。
+        * 这保证了括号内的所有运算都在括号外部的运算之前完成。当遇到右括号时，表示一个子表达式已经结束，可以将其所有运算符结算。
+
+    * **运算符 (Operator)**: 这是算法中最复杂的部分，它依赖于**优先级**规则。
+        * **优先级比较**: 算法会比较当前运算符和栈顶运算符的优先级。
+        * **如果栈顶是运算符，且其优先级 ≥ 当前运算符的优先级**，则将栈顶运算符弹出并发送到输出队列。
+        * 这个过程会一直重复，直到栈为空，或者栈顶是左括号，或者栈顶运算符的优先级低于当前运算符。
+        * 这个逻辑保证了高优先级的运算符（例如 `&`）在低优先级的运算符（例如 `|`）之前被处理。
+        * 处理完高优先级运算符后，将当前运算符压入栈。
+
+3.  **清栈**: 当所有 token 都处理完毕后，运算符栈中可能还有剩余的运算符。将栈中所有剩余的运算符依次弹出并发送到输出队列。
+    * 这确保了所有未被括号限定的运算符（即优先级最低的那些）在最后被结算。
+
+#### 示例：`((A & B) | C)` 的转换过程
+
+| Token | `op_stack` | `output` | 解释 |
+| :---: | :---: | :---: | :--- |
+| `(` | `[` | `[]` | 压入左括号 |
+| `(` | `[(]` | `[]` | 再次压入左括号 |
+| `A` | `[ ( ( ]` | `[A]` | 操作数，直接输出 |
+| `&` | `[ ( ( & ]` | `[A]` | 运算符，压栈 |
+| `B` | `[ ( ( & ]` | `[A, B]` | 操作数，直接输出 |
+| `)` | `[ ( ( ]` | `[A, B, &]` | 遇到右括号，弹出栈顶直到左括号 |
+| `\|` | `[ ( \| ]` | `[A, B, &]` | 运算符，压栈 |
+| `C` | `[ ( \| ]` | `[A, B, &, C]` | 操作数，直接输出 |
+| `)` | `[ ( ]` | `[A, B, &, C, \|]` | 遇到右括号，弹出栈顶直到左括号 |
+| (结束) | `[]` | `[A, B, &, C, \|]` | 清空栈，得到最终结果 |
+
+最终得到的 RPN 表达式为 `A B & C |`，与中缀表达式的逻辑等价。
+
+通过这种方式，`shunting_yard_fix` 函数将中缀表达式的**结构**和**优先级**信息，精确地映射到了 RPN 表达式的**顺序**中。这是一种严谨的数学转换，确保了表达式的逻辑等价性，从而满足了服务器Z3求解器的验证要求。
+
 ![](img/misc_gacha-gate.png)
 
 ```python
-def solve():
-    """
-    Connects to the server, solves 50 challenges, and gets the flag.
-    """
-    HOST = 'gacha-gate.chal.idek.team'
-    PORT = 1337
-    conn = remote(HOST, PORT)
+#!/usr/bin/env python3
 
-    # CRITICAL: Receive and discard the initial banner to sync with the server.
+from pwn import *
+import re
+
+# remote connection
+HOST = 'gacha-gate.chal.idek.team'
+PORT = 1337
+
+# Operator precedence and associativity
+# Precedence: `~` (highest) > `&` > `^` > `|` (lowest)
+# All are left-associative except for `~`, which is unary
+OP_PRECEDENCE = {'~': 3, '&': 2, '^': 1, '|': 0}
+# Associativity: L for left-associative, R for right-associative (not needed here)
+OP_ASSOCIATIVITY = {'&': 'L', '^': 'L', '|': 'L'}
+
+
+def shunting_yard_fix(infix_expr: str) -> str:
+    """
+    Correctly converts an infix expression to RPN using the Shunting-yard algorithm.
+    This version handles operator precedence and parentheses correctly.
+    """
+    output = []
+    op_stack = []
+
+    # Regex to tokenize the expression: numbers, variables, operators, and parentheses
+    # Note: the `|` operator is a bitwise OR, not a regex OR
+    tokens = re.findall(r'[0-9]+|[iIl]+|[~&^|]|[()]', infix_expr)
+    
+    # Simple state machine to distinguish unary `~`
+    # The server always formats it as `(~...)`, so `~` is always followed by `(`
+    # We can rely on this predictable format.
+
+    for token in tokens:
+        if token.isdigit() or re.fullmatch(r'[iIl]+', token):
+            output.append(token)
+        elif token == '(':
+            op_stack.append(token)
+        elif token == ')':
+            while op_stack and op_stack[-1] != '(':
+                output.append(op_stack.pop())
+            if op_stack and op_stack[-1] == '(':
+                op_stack.pop() # Pop the left parenthesis
+            else:
+                raise ValueError("Mismatched parentheses")
+        elif token in OP_PRECEDENCE:
+            while (op_stack and op_stack[-1] in OP_PRECEDENCE and
+                   OP_PRECEDENCE[op_stack[-1]] >= OP_PRECEDENCE[token]):
+                output.append(op_stack.pop())
+            op_stack.append(token)
+        else:
+            raise ValueError(f"Unknown token: {token}")
+
+    while op_stack:
+        if op_stack[-1] == '(':
+            raise ValueError("Mismatched parentheses")
+        output.append(op_stack.pop())
+
+    # For the unary `~`, the server formats it as `(~A)`.
+    # Our algorithm will generate `A ~`.
+    # Let's adjust for the fact that the server `~` is always unary.
+    # The `combine` function in server code handles `~` as a unary operator.
+    # We will treat it as a unary postfix operator in RPN.
+    
+    # The above algorithm handles it correctly as long as `~` is treated as an operator
+    # with high precedence. The `pop from empty list` error indicates the stack
+    # was empty *before* a binary op, not `~`. Let's re-verify the logic.
+    # A standard Shunting-yard algorithm should handle this.
+    
+    # A key observation: the server expression is always fully parenthesized.
+    # `(A op B)` or `(~A)`. This means we can use a simpler stack-based parser
+    # that doesn't need to handle complex precedence rules, as the parentheses
+    # already define the order of operations.
+
+    # Let's try a stack-based parser specifically for fully parenthesized expressions.
+    stack = []
+    for token in tokens:
+        if token.isdigit() or re.fullmatch(r'[iIl]+', token):
+            stack.append(token)
+        elif token == '~':
+            # This is a unary operator, it will operate on the next operand
+            # In RPN, it becomes `operand ~`
+            # For `(~...)`, we will push `~` to stack and pop it after the operand is processed
+            # But the server tokenizes as `~` then `(`, which complicates things.
+            # A simple way to fix the original code is to check for stack length.
+            # Let's go back to the original simple parser and fix it.
+            pass
+        elif token == '(':
+            pass # Ignore opening parentheses
+        elif token == ')':
+            # Closing a subexpression.
+            # Check for a binary op first. `(a op b)` -> `a b op`
+            if len(stack) >= 3 and stack[-2] in OP_PRECEDENCE and stack[-3] not in OP_PRECEDENCE:
+                 op = stack.pop()
+                 b = stack.pop()
+                 a = stack.pop()
+                 stack.append(f'{a} {b} {op}')
+            # Check for a unary op. `(~a)` -> `a ~`
+            elif len(stack) >= 2 and stack[-2] == '~':
+                 op = stack.pop()
+                 operand = stack.pop()
+                 stack.append(f'{operand} {op}')
+            
+        elif token in OP_PRECEDENCE:
+            stack.append(token)
+    
+    # The previous logic was flawed. A proper Shunting-yard is needed.
+    # The `pop from empty list` error in your run shows that a naive approach fails.
+    # Let's try again with a robust Shunting-yard implementation.
+    
+    # The problem is that the `~` can be followed by a `(`, and the `pop` would fail.
+    # A robust algorithm must handle unary operators correctly.
+    # Let's re-write `shunting_yard` from scratch for clarity and correctness.
+    
+    output = []
+    op_stack = []
+    # Tokenize the expression, including all symbols
+    tokens = re.findall(r'[0-9]+|[iIl]+|[~&^|]|[()]', infix_expr)
+    
+    for token in tokens:
+        if token.isdigit() or re.fullmatch(r'[iIl]+', token):
+            output.append(token)
+        elif token == '(':
+            op_stack.append(token)
+        elif token == ')':
+            while op_stack and op_stack[-1] != '(':
+                output.append(op_stack.pop())
+            if op_stack:
+                op_stack.pop() # pop '('
+        elif token in OP_PRECEDENCE:
+            # Handle unary `~`
+            if token == '~':
+                # The server's format is `(~...)`, so `~` is always followed by `(`.
+                # We can treat `~` as a special case.
+                # Let's push it, and process it later
+                op_stack.append(token)
+            else: # Binary operators
+                while op_stack and op_stack[-1] != '(' and \
+                      OP_PRECEDENCE[op_stack[-1]] >= OP_PRECEDENCE[token]:
+                    output.append(op_stack.pop())
+                op_stack.append(token)
+        else:
+            raise ValueError(f"Unknown token: {token}")
+
+    while op_stack:
+        output.append(op_stack.pop())
+    
+    return ' '.join(output)
+
+
+def main():
+    conn = remote(HOST, PORT)
+    
     conn.recvuntil(b'lets play a game!\n')
-    log.info("Initial banner received. Starting challenges...")
+    
+    log.info("Starting the challenge...")
 
     for i in range(50):
+        line = conn.recvline().decode().strip()
+        log.info(f"[{i+1}/50] Received: {line}")
+        
         try:
-            # Now, this will correctly read the first mathematical expression.
-            infix_expr = conn.recvline().decode().strip()
-            if not infix_expr: # Handle empty lines just in case
-                continue
+            rpn_expression = shunting_yard_fix(line)
+            log.info(f"[{i+1}/50] Sending: {rpn_expression}")
             
-            log.info(f"[{i+1}/50] Received: {infix_expr}")
+            conn.sendline(rpn_expression.encode())
             
-            # Convert the expression to RPN
-            rpn_expr = shunting_yard(infix_expr)
-            log.success(f"[{i+1}/50] Sending:   {rpn_expr}")
+            response = conn.recvline().decode().strip()
+            log.info(f"[{i+1}/50] Received: {response}")
             
-            # Send the RPN solution
-            conn.sendline(rpn_expr.encode())
-            
-            # The server will respond with "let me see.." before the next challenge.
-            # We can optionally read this to stay in sync, but for this specific
-            # challenge, reading only at the top of the loop is sufficient.
-            conn.recvline() # Consume the "let me see.." line
-
-        except EOFError:
-            log.error("Connection closed by server. This likely happened after an incorrect answer.")
-            break
+            if "wrong!" in response or "invalid" in response or "too slow" in response:
+                log.error(f"Failed at round {i+1}. Server said: {response}")
+                conn.close()
+                return
         except Exception as e:
-            log.error(f"An error occurred: {e}")
+            log.error(f"An error occurred during round {i+1}: {e}")
             conn.close()
             return
-            
-    # After the loop, try to receive the flag
-    try:
-        flag = conn.recvall(timeout=2).decode().strip()
-        if "idek{" in flag:
-            log.success(f"Success! Flag: {flag}")
-        else:
-            log.warning(f"Loop finished, but no flag received. Server response: {flag}")
-    except Exception as e:
-        log.error(f"Could not receive flag. Error: {e}")
-    finally:
-        conn.close()
 
-# The rest of the script (imports, shunting_yard, etc.) remains the same.
-# Make sure to call solve() at the end.
+    log.success("All 50 rounds completed! Waiting for the flag...")
+    flag = conn.recvline().decode().strip()
+    log.success(f"Flag: {flag}")
+    
+    conn.close()
+
 if __name__ == "__main__":
-    solve()
+    main()
 ```
 
 # Crypto
 
 ## Catch
 
-题目
+### 题目
 
 ```python
 from Crypto.Random.random import randint, choice
@@ -448,7 +656,9 @@ for round in range(20):
 print(f"🏆 Victory! The treasure lies within: {open('flag.txt').read()}")
 ```
 
-This is a classic "meet-in-the-middle" or search problem disguised as a random walk. However, the search space is far too large for a brute-force attack. The key lies in reversing the process and exploiting a mathematical property of the transformations.
+> 赛后看官方 WriteUp，发现是一道[论文](https://eprint.iacr.org/2023/1745.pdf)题
+
+<!-- This is a classic "meet-in-the-middle" or search problem disguised as a random walk. However, the search space is far too large for a brute-force attack. The key lies in reversing the process and exploiting a mathematical property of the transformations.
 
 ### Analysis of the Challenge
 
@@ -491,7 +701,81 @@ This will efficiently reveal the unique sequence of 30 parts in reverse order.
 
 ### The Solution Script
 
-Here is a Python script using `pwntools` to automate the process for all 20 rounds.
+Here is a Python script using `pwntools` to automate the process for all 20 rounds. -->
+
+## 题目核心
+
+- 状态：$(x,y)$ 为两个大整数。
+- 步骤：从 8‑字节的 `part` 读取 4 个 16‑位整数
+
+$$
+M=\begin{pmatrix}
+a & b\\
+c & d
+\end{pmatrix},
+\qquad
+\begin{pmatrix}x'\\y'\end{pmatrix}=M\begin{pmatrix}x\\y\end{pmatrix},
+$$
+
+其中 `part` 为 `mind` 中的一个不重复的块。
+- 初始坐标 $(x_0,y_0)$ 随机于 $[0,2^{256})$。
+- `mind` 长 1000 字节，划分成 125 个互不相同的 8‑字节块 `step`，随后在 `moving` 中不放回地取 30 次。
+
+---
+
+每次乘以一个 2×2 整数矩阵，行列式的绝对值大约在 $2^{16}$ 量级，导致坐标的位数每一步增加约 16–17 位。
+
+$$
+\operatorname{bitlen}(x_{i})\approx 256+16\cdot i.
+$$
+
+当 $i=30$ 时，位长约 $256+30\cdot 17\approx 766$ 位。
+给出的 `limit` 是 1024‑位的整数，远大于此值，因此在 30 步内不可能出现 `x>limit` 或 `y>limit`，循环永远不会在途中 `break`，必定执行完整的 30 次变换。
+
+---
+
+矩阵 $M$ 的逆为
+
+$$
+M^{-1}=\frac{1}{\det M}
+\begin{pmatrix}
+d & -b\\
+-c & a
+\end{pmatrix},
+\qquad \det M=ad-bc.
+$$
+
+若 $(x_{k},y_{k})$ 为第 $k$ 步后的坐标，则
+
+$$
+\begin{aligned}
+x_{k-1} &=\frac{d\,x_{k}-b\,y_{k}}{\det M},\\
+y_{k-1} &=-\frac{c\,x_{k}+a\,y_{k}}{\det M}.
+\end{aligned}
+$$
+
+为了保持整数，必须满足
+
+$$
+\begin{cases}
+d\,x_{k} - b\,y_{k}\equiv 0\pmod{\det M},\\
+-a\,y_{k} - c\,x_{k}\equiv 0\pmod{\det M}.
+\end{cases}
+$$
+
+对随机的 16‑位矩阵来说，上式的同余条件出现的概率约为 $2^{-16}$ 甚至更低，因而在全部 125 条候选中几乎只能找出 **唯一** 能满足整除的矩阵。换言之，逆向搜索每一步都几乎唯一确定上一轮使用的 `part`。
+
+### Exploit
+
+1. 已知初始向量 $\mathbf{v}_0=(x_0,y_0)$ 与最终向量 $\mathbf{v}_{30}=(x_{30},y_{30})$。
+2. 设 $\mathcal{S}$ 为剩余未使用的 125 条 `part`。
+3. 对于当前坐标 $\mathbf{v}_k$（从 $\mathbf{v}_{30}$ 开始），遍历 $\mathcal{S}$ 中的每个 `part`，
+   - 解析成 $(a,b,c,d)$，计算 $\det M$。若 $\det M=0$ 则直接跳过。
+   - 检验上面的两条同余式，若都能整除，则唯一得到上一状态 $\mathbf{v}_{k-1}$。
+   - 将该 `part` 从 $\mathcal{S}$ 中移除，递归继续寻找 $\mathbf{v}_{k-1}$。
+4. 当递归深度达到 30 且恰好回到 $\mathbf{v}_0$ 时，已得到完整的逆序 `part` 列表；把顺序反转即可得到正向的 30 步路径。
+
+
 
 ```python
 #!/usr/bin/env python3
