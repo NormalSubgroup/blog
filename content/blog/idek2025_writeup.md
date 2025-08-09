@@ -336,7 +336,7 @@ def solve():
     try:
         flag = conn.recvall(timeout=2).decode().strip()
         if "idek{" in flag:
-            log.success(f"🎉 Success! Flag: {flag}")
+            log.success(f"Success! Flag: {flag}")
         else:
             log.warning(f"Loop finished, but no flag received. Server response: {flag}")
     except Exception as e:
@@ -1022,7 +1022,9 @@ SageMath 库提供了直接计算这个多项式的函数 `H.frobenius_polynomia
 2.  对 $N$ 进行质因数分解：$N = p_1^{e_1} p_2^{e_2} \cdots p_k^{e_k}$。
 3.  初始化一个候选阶 `order_candidate` 为 $N$。
 4.  对每一个质因子 $p_i$，我们不断尝试用它去除 `order_candidate`。只要 $(\text{order\_candidate} / p_i) \cdot G$ 的结果是单位元（在Mumford表示中，单位元是 $(U=1, V=0)$），我们就更新 `order_candidate`：
+
     $$\text{order\_candidate} \leftarrow \frac{\text{order\_candidate}}{p_i}$$
+
     这个过程一直持续到除以 $p_i$ 后不再是单位元为止。
 5.  遍历完所有质因子后，`order_candidate` 的最终值就是点 $G$ 的真实阶。
 
@@ -1036,6 +1038,63 @@ idek{find_the_order_of_hyperelliptic_curve_is_soooo_hard:((}
 
 
 ## Diamond Ticket
+
+### 题目
+
+```python
+from Crypto.Util.number import *
+
+#Some magic from Willy Wonka
+p = 170829625398370252501980763763988409583
+a = 164164878498114882034745803752027154293
+b = 125172356708896457197207880391835698381
+
+def chocolate_generator(m:int) -> int:
+    return (pow(a, m, p) + pow(b, m, p)) % p
+
+#The diamond ticket is hiding inside chocolate
+diamond_ticket = open("flag.txt", "rb").read()
+assert len(diamond_ticket) == 26
+assert diamond_ticket[:5] == b"idek{"
+assert diamond_ticket[-1:] == b"}"
+diamond_ticket = bytes_to_long(diamond_ticket[5:-1])
+
+flag_chocolate = chocolate_generator(diamond_ticket)
+chocolate_bag = []
+
+#Willy Wonka are making chocolates
+for i in range(1337):
+    chocolate_bag.append(getRandomRange(1, p))
+
+#And he put the golden ticket at the end
+chocolate_bag.append(flag_chocolate)
+
+#Augustus ate lots of chocolates, but he can't eat all cuz he is full now :D
+remain = chocolate_bag[-5:]
+
+#Compress all remain chocolates into one
+remain_bytes = b"".join([c.to_bytes(p.bit_length()//8, "big") for c in remain])
+
+#The last chocolate is too important, so Willy Wonka did magic again
+P = getPrime(512)
+Q = getPrime(512)
+N = P * Q
+e = bytes_to_long(b"idek{this_is_a_fake_flag_lolol}")
+d = pow(e, -1, (P - 1) * (Q - 1))
+c1 = pow(bytes_to_long(remain_bytes), e, N)
+c2 = pow(bytes_to_long(remain_bytes), 2, N) # A small gift
+
+#How can you get it ?
+print(f"{N = }")
+print(f"{c1 = }")
+print(f"{c2 = }") 
+
+"""
+N = 85494791395295332945307239533692379607357839212287019473638934253301452108522067416218735796494842928689545564411909493378925446256067741352255455231566967041733698260315140928382934156213563527493360928094724419798812564716724034316384416100417243844799045176599197680353109658153148874265234750977838548867
+c1 = 27062074196834458670191422120857456217979308440332928563784961101978948466368298802765973020349433121726736536899260504828388992133435359919764627760887966221328744451867771955587357887373143789000307996739905387064272569624412963289163997701702446706106089751532607059085577031825157942847678226256408018301
+c2 = 30493926769307279620402715377825804330944677680927170388776891152831425786788516825687413453427866619728035923364764078434617853754697076732657422609080720944160407383110441379382589644898380399280520469116924641442283645426172683945640914810778133226061767682464112690072473051344933447823488551784450844649
+"""
+```
 
 ## Sadness ECC - Revenge
 
@@ -1661,7 +1720,199 @@ if __name__ == "__main__":
 
 ## FITM
 
-也有人用格，但我不会格，于是爆！注意优化一下内存和 GoRoutine 数量即可
+也有人用格，但我不会格，于是爆！注意优化一下内存和 GoRoutine 数量即可，中间试过写jsonRPC，但 SageMath 环境下，暴露有些问题，于是还是古法 stdio....
+
+> 但显然，格更有含量，这个方案插个队
+
+### 方法 1
+
+## 阶段一：收集候选余数
+
+对每一次与服务器的交互（对应素数 $p_i$），服务器返回一个 16 次多项式
+
+$$
+f_i(x)=\sum_{j=0}^{16}c_{i,j}x^{j}\pmod{p_i},
+$$
+
+其中系数 $c_{i,j}$ 大约有 640 位。
+秘密 $s$（同样约 640 位）被随机嵌入在 $x^5$–$x^{11}$ 中的某个系数 $c_{i,k_i}$（$k_i\in\{5,\dots,11\}$）上。
+
+由于 **系数大小 $\sim 2^{640}$ 远大于模数 $\sim 2^{64}$**，我们可以利用这一定量差异。
+
+### 1. 查询点值
+选取 12 个点
+
+$$
+x=m,\quad m=1,\dots ,12,
+$$
+
+并得到对应的 12 条共享
+
+$$
+f_i(m)\equiv y_m\pmod{p_i}\qquad (m=1,\dots ,12). 
+$$
+
+### 2. 小系数插值
+使用拉格朗日插值构造唯一的次数 $\le 11$ 多项式
+
+$$
+Q_i(x)\;,\qquad \deg Q_i\le 11,
+$$
+
+使得
+
+$$
+Q_i(m)\equiv y_m\pmod{p_i}\quad (m=1,\dots,12).
+$$
+
+其系数均在 $[0,p_i-1]$ 之内，故称为“小”多项式。
+
+### 3. 构造格
+设
+
+$$
+h(x)=f_i(x)-Q_i(x).
+$$
+
+由于
+
+$$
+h(m)=f_i(m)-Q_i(m)\equiv0\pmod{p_i}\quad(m=1,\dots,12),
+$$
+
+在模 $p_i$ 意义下
+
+$$
+M(x)=\prod_{m=1}^{12}(x-m)
+$$
+
+整除 $h(x)$。在整数环里
+
+$$
+h(x)=G(x)M(x),\qquad \deg G=4,
+$$
+
+于是 $h$ 的系数向量位于由
+
+$$
+M(x),\;xM(x),\;x^{2}M(x),\;x^{3}M(x),\;x^{4}M(x)
+$$
+
+张成的 5‑维格 $L_i$ 中。
+
+### 4. 在格中寻找候选
+记 $q$ 为 $Q_i(x)$ 的系数向量，$h_j=c_{i,j}-q_j$ 为大系数。
+对每个可能的秘密位置 $k\in\{5,\dots,11\}$：
+
+1. 目标向量 $t=-q$。
+2. 在格 $L_i$ 中解最近向量问题 (CVP)，得到一个向量 $h$ 与真实系数相近。
+3. 复原
+
+$$
+c_{i,j}=h_j+q_j,
+\qquad 
+s_{i,k}=c_{i,k}\bmod p_i .
+$$
+
+对每个素数 $p_i$（共 17 个），可得到 7（即 12‑点插值产生的 7 种）候选余数 $s_{i,k}$。
+
+---
+
+## 阶段二：格攻击求解最终秘密
+
+我们已经得到 17 组候选余数 $\{s_{i,k}\}$（$i=1,\dots,17$，$k=5,\dots,11$）。
+目标是从每组中选出恰好一个，利用 CRT 合成唯一的 640 位整数 $S$。
+
+### 1. 变量模型
+
+引入二进制选择变量
+
+$$
+b_{i,k}\in\{0,1\},\qquad \sum_{k=5}^{11}b_{i,k}=1\quad (i=1,\dots,17).
+$$
+
+则
+
+$$
+S\equiv\sum_{i=1}^{17}\sum_{k=5}^{11}b_{i,k}\, s_{i,k}\pmod{p_i}\quad (i=1,\dots,17).
+$$
+
+### 2. CRT 合并
+
+令
+
+$$
+M=\prod_{i=1}^{17}p_i,
+\qquad
+C_i=\frac{M}{p_i}\bigl(\tfrac{M}{p_i}\bigr)^{-1}\bmod p_i,
+$$
+
+则
+
+$$
+S\equiv\sum_{i=1}^{17}\Bigl(\sum_{k=5}^{11}b_{i,k}s_{i,k}\Bigr)C_i\pmod{M}.
+$$
+
+设基准选取 $k=5$：
+
+$$
+b_{i,5}=1-\sum_{k=6}^{11}b_{i,k},
+$$
+
+代入并整理得到
+
+$$
+S=S_{0}+\sum_{i=1}^{17}\sum_{k=6}^{11}b_{i,k}\, d_{i,k} - K\,M,
+\tag{1}
+$$
+
+其中
+
+* $S_{0}$ 为全部取 $k=5$ 时的 CRT 结果；
+* $d_{i,k}$ 为切换为 $k$ 相对于基准 $5$ 的差值；
+* $K$ 为任意整数。
+
+式 (1) 中共 102 个二进制变量 $b_{i,k}$（$i=1,\dots,17$，$k=6,\dots,11$）和一个整数变量 $K$。
+
+### 3. 构造格
+
+构造 $103\times103$ 的下三角矩阵
+
+$$
+B=
+\begin{pmatrix}
+2 &        &        &        &        & d_{1,6} \\
+  & 2      &        &        &        & d_{1,7} \\
+  &        & \ddots &        &        & \vdots\\
+  &        &        & 2      &        & d_{17,11}\\
+  &        &        &        & 1 & -M
+\end{pmatrix},
+$$
+
+* 前 102 行对应变量 $b_{i,k}$（对角线为 2 用于惩罚非 0/1 解）；
+* 第 103 行对应 $K$（系数 $-M$）。
+
+在该格中搜索短向量（例如使用 LLL）即可得到满足 (1) 且使
+
+$$
+0\le S<2^{640}
+$$
+
+的解。短向量的前 102 维即为所求的 $\{b_{i,k}\}$，第 103 位为 $K$。
+
+### 4. 恢复秘密
+
+把得到的 $\{b_{i,k}\}$ 代入 (1) 计算
+
+$$
+S=S_{0}+\sum_{i,k}b_{i,k}\,d_{i,k} - K\,M,
+$$
+
+即可得到原始的 640 位整数 $S$。将其转为十六进制并提交给服务器的 **Verify** 接口即可完成验证。
+
+---
+
+### 方法 2
 
 这道题目的名称 "FITM" 暗示了中间人攻击（Man-in-the-Middle），flag 也印证了这点，但我们队伍的实际解法是一种利用数论技巧和暴力搜索相结合的方法来解决一个隐藏数字问题 (Hidden Number Problem)。
 
@@ -1682,6 +1933,9 @@ if __name__ == "__main__":
 4.  这组 $(y_0, \dots, y_{11})$ 正是多项式系数序列 $(a_0, \dots, a_{11})$ 的离散傅里叶变换（注意 $a_0, \dots, a_4$ 均为0）。
 5.  我们可以通过**逆离散傅里叶变换 (IDFT)** 公式来恢复系数 $a_m \pmod p$：
     $$a_m \equiv \frac{1}{12} \sum_{k=0}^{11} y_k \omega^{-mk} \pmod p$$
+
+> 不是我们，是 @法里树，这种方法我真想不出来
+
 通过这个方法，对于每一个我们选择的素数 $p_i$，我们都可以计算出该多项式的7个非零系数模 $p_i$ 的值，记为 $\{c_{i,5}, c_{i,6}, \dots, c_{i,11}\}$。
 
 ---
