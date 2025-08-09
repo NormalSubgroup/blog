@@ -2,6 +2,7 @@
 title = "第一次笔记：Zola 与 tabi"
 date = "2025-08-09"
 description = "快速上手 Zola 与 tabi 的最小实践"
+
 [taxonomies]
 tags = ["zola", "tabi", "notes"]
 +++
