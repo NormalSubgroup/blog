@@ -7,7 +7,9 @@ description = "AK Cryptography!!!"
 tags = ["idekCTF", "Team", "WriteUp", "Cryptography", "Reverse", "Web"]
 +++
 
-大家在开赛后临时创号玩的...
+大家在开赛后临时创号玩的，二进制哥们很忙，于是我们就做了一些别的题
+
+质量不错，也许值 65+ 权重
 
 > 博客还在调试，图片显示可能存在问题，在寻找一个好用的对象存储
 
