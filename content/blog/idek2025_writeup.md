@@ -7,9 +7,11 @@ description = "AK Cryptography!!!"
 tags = ["idekCTF", "Team", "WriteUp", "Cryptography", "Reverse", "Web"]
 +++
 
-大家在开赛后临时创号玩的，二进制哥们很忙，于是我们就做了一些别的题
+大家在开赛后临时创号玩的，二进制哥们很忙，于是我们就做了一些别的题，但也遗憾在这里，只靠密码，前 24h 便来到第九名，后续没题可做了
 
 质量不错，也许值 65+ 权重
+
+另外，本场比赛遇到不少 Golang 可能遇到的问题，并解决了
 
 > 博客还在调试，图片显示可能存在问题，在寻找一个好用的对象存储
 
@@ -1094,6 +1096,366 @@ N = 8549479139529533294530723953369237960735783921228701947363893425330145210852
 c1 = 27062074196834458670191422120857456217979308440332928563784961101978948466368298802765973020349433121726736536899260504828388992133435359919764627760887966221328744451867771955587357887373143789000307996739905387064272569624412963289163997701702446706106089751532607059085577031825157942847678226256408018301
 c2 = 30493926769307279620402715377825804330944677680927170388776891152831425786788516825687413453427866619728035923364764078434617853754697076732657422609080720944160407383110441379382589644898380399280520469116924641442283645426172683945640914810778133226061767682464112690072473051344933447823488551784450844649
 """
+```
+
+这题一开始思路被带偏，上来就是 $\pmod (p-1)$ 走了多少弯路
+
+因为有爆破的成分在，我们继续 Golang
+
+## 1. 问题概述
+
+我们需要求出 **`diamond_ticket`** 的值，它是一个长度为 20 字节的可打印 ASCII 字符串，记为整数
+
+$$
+m \in [m_{\text{min}},\,m_{\text{max}}] .
+$$
+
+在题目提供的 Python 脚本中，`m` 被视作一个 20 字节的整数，并被代入函数
+
+$$
+\text{flag\_chocolate}= (a^m+b^m)\bmod p ,
+$$
+
+其中
+
+* $p$ 为大素数
+* $a,b$ 为已知常数
+
+后半段涉及 RSA 加密，但 **公钥指数 $e$ 为偶数**，导致 $\gcd(e,\varphi(N))\neq 1$ 且私钥不可求，暗示 RSA 部分是误导，真正的突破点在 **第一部分的数论约束**。
+
+下面的分析以 **Go** 实现的搜索程序为出发点，说明其数学原理。
+
+---
+
+## 2. 数学原理
+
+### 2.1 费马小定理与阶
+
+对任意整数 $x$ 与素数 $p$（$p\nmid x$）有
+
+$$
+x^{p-1}\equiv 1 \pmod{p}.
+$$
+
+若整数 $x$ 在模 $p$ 下的 **阶**（$\operatorname{ord}_p(x)$）定义为
+
+$$
+\operatorname{ord}_p(x)=\min\{k>0\mid x^k\equiv 1\pmod{p}\},
+$$
+
+则 $\operatorname{ord}_p(x)$ 必是 $p-1$ 的约数。
+
+### 2.2 关键参数
+
+* 题目给出的素数
+
+$$
+p_{\text{crypto}} = 170\,829\,625\,398\,370\,252\,501\,980\,763\,763\,988\,409\,583 .
+$$
+
+* Go 代码中使用的
+
+$$
+q = p_{\text{crypto}}-1\; / \; 2 = 85\,414\,812\,699\,185\,126\,250\,990\,381\,881\,994\,204\,791 .
+$$
+
+计算可得
+
+$$
+q = \frac{p_{\text{crypto}}-1}{2}.
+$$
+
+注释 `a.multiplicative_order()+1` 表明
+
+$$
+\operatorname{ord}_{p_{\text{crypto}}}(a) = q,
+$$
+
+即 $a$ 的阶恰为 $q$。于是
+
+$$
+a^{\frac{p_{\text{crypto}}-1}{2}} \equiv 1 \pmod{p_{\text{crypto}}}.
+$$
+
+### 2.3 同余关系
+
+任意整数 $m$ 可写成
+
+$$
+m = k\;q + r,\qquad 0\le r < q,
+$$
+
+即
+
+$$
+m \equiv r \pmod{q}.
+$$
+
+将其代入 $a^m$：
+
+$$
+a^{m}=a^{kq+r}=(a^{q})^{k}\,a^{r}\equiv 1^{k}\,a^{r}\equiv a^{r}\pmod{p_{\text{crypto}}}.
+$$
+
+因此 $a^m$ 只依赖于 **余数** $r = m \bmod q$。
+
+Go 代码直接给出了
+
+$$
+r_{\text{go}} = 4\,807\,895\,356\,063\,327\,854\,843\,653\,048\,517\,090\,061 .
+$$
+
+于是核心约束化为
+
+$$
+\boxed{\,m \equiv r_{\text{go}}\pmod{q}\,}.
+$$
+
+---
+
+## 3. 搜索算法的数学推导
+
+### 3.1 可打印字符串的取值范围
+
+ASCII 可打印字符范围为
+
+$$
+32 \le \text{byte} \le 126 .
+$$
+
+因此 20 字节字符串对应的整数范围为
+
+$$
+m_{\text{min}} = \underbrace{0x20\cdots20}_{20\text{ 个空格}} ,
+\qquad
+m_{\text{max}} = \underbrace{0x7E\cdots7E}_{20\text{ 个波浪号}} .
+$$
+
+### 3.2 约束的整数解
+
+我们同时需要满足
+
+$$
+\begin{cases}
+m = k\,q + r_{\text{go}} ,\\
+m_{\text{min}} \le m \le m_{\text{max}} .
+\end{cases}
+$$
+
+代入得到关于 $k$ 的不等式
+
+$$
+m_{\text{min}} - r_{\text{go}} \le k\,q \le m_{\text{max}} - r_{\text{go}} .
+$$
+
+除以 $q$ 并取整数，得到
+
+$$
+k_{\text{start}} = \left\lceil \dfrac{m_{\text{min}} - r_{\text{go}}}{q}\right\rceil,
+\qquad
+k_{\text{end}}   = \left\lfloor \dfrac{m_{\text{max}} - r_{\text{go}}}{q}\right\rfloor .
+$$
+
+这正是 Go 程序中 `kStart` 与 `kEnd` 的计算方式。
+
+### 3.3 搜索流程（不涉及代码）
+
+1. **初始化**：设定 $q$ 与 $r_{\text{go}}$。
+2. **计算范围**：由可打印字符计算 $m_{\text{min}},\,m_{\text{max}}$，进而得到 $[k_{\text{start}},k_{\text{end}}]$。
+3. **并行遍历**：将该区间划分为若干块，利用多核 CPU 并行遍历每个 $k$。
+4. **候选验证**：对每个 $k$ 计算
+
+   $$
+   m = k\,q + r_{\text{go}} .
+   $$
+
+   将整数 $m$ 转为 20 字节序列，检查每个字节是否落在 $[32,126]$ 区间。
+5. **输出**：找到满足所有条件的唯一 $m$ 后，将其格式化为
+
+   $$
+   \text{idek\{ \ldots \}} .
+   $$
+
+---
+
+## 4. 结论
+
+通过 **模运算** 与 **阶的性质**，原本看似复杂的密码学问题被化简为单一同余方程
+
+$$
+m \equiv r_{\text{go}} \pmod{q},
+$$
+
+再结合 “可打印 20 字节字符串” 的物理约束，搜索空间被大幅缩小。
+Go 实现的并行搜索遍历所有满足数论约束的候选，最终得到隐藏的 **`diamond_ticket`**，即题目所求的 20 字符密钥。
+
+```golang
+package main
+
+import (
+    "bytes"
+    "fmt"
+    "math/big"
+    "os"
+    "runtime"
+    "sync"
+    "time"
+
+    "github.com/schollz/progressbar/v3"
+)
+
+func isPrintable(data []byte) bool {
+    for _, b := range data {
+        if b < 32 || b > 126 {
+            return false
+        }
+    }
+    return true
+}
+
+func worker(
+    k_start, k_end *big.Int,
+    p_minus_1, r *big.Int,
+    wg *sync.WaitGroup,
+    bar *progressbar.ProgressBar,
+    foundMutex *sync.Mutex,
+    outputFile *os.File,
+) {
+    defer wg.Done()
+    m := new(big.Int).Mul(k_start, p_minus_1)
+    m.Add(m, r)
+    const flagContentLength = 20
+    mBytes := make([]byte, flagContentLength)
+
+    const batchSize = 10000
+    var batchCounter int64 = 0
+
+    loopCount := new(big.Int).Sub(k_end, k_start)
+    loopCount.Add(loopCount, big.NewInt(1))
+
+    one := big.NewInt(1)
+    i := new(big.Int)
+
+    for i.Cmp(loopCount) < 0 {
+        if m.BitLen() <= flagContentLength*8 {
+            m.FillBytes(mBytes)
+            if isPrintable(mBytes) {
+                foundMutex.Lock()
+                flag := fmt.Sprintf("idek{%s}", string(mBytes))
+                fmt.Println("\n[+] possible flag:", flag)
+                _, err := outputFile.WriteString(flag + "\n")
+                if err != nil {
+                    fmt.Println("[-] err:", err)
+                }
+                foundMutex.Unlock()
+            }
+        }
+
+        m.Add(m, p_minus_1)
+
+        batchCounter++
+        if batchCounter == batchSize {
+            bar.Add64(batchSize)
+            batchCounter = 0
+        }
+
+        i.Add(i, one)
+    }
+
+    if batchCounter > 0 {
+        bar.Add64(batchCounter)
+    }
+}
+
+func main() {
+    // a.multiplicative_order()+1,因为后面有个p-1,懒得改了
+    pStr := "85414812699185126250990381881994204792"
+    rStr := "4807895356063327854843653048517090061"
+
+    p, _ := new(big.Int).SetString(pStr, 10)
+    r, _ := new(big.Int).SetString(rStr, 10)
+
+    pMinus1 := new(big.Int).Sub(p, big.NewInt(1))
+    const flagContentLength = 20
+
+    mMinBytes := bytes.Repeat([]byte{32}, flagContentLength)
+    mMaxBytes := bytes.Repeat([]byte{126}, flagContentLength)
+    mMin := new(big.Int).SetBytes(mMinBytes)
+    mMax := new(big.Int).SetBytes(mMaxBytes)
+    kStartNum := new(big.Int).Sub(mMin, r)
+    kStart := new(big.Int).Div(kStartNum, pMinus1)
+
+    mCheck := new(big.Int).Mul(kStart, pMinus1)
+    mCheck.Add(mCheck, r)
+    if mCheck.Cmp(mMin) < 0 {
+        kStart.Add(kStart, big.NewInt(1))
+    }
+
+    kEndNum := new(big.Int).Sub(mMax, r)
+    kEnd := new(big.Int).Div(kEndNum, pMinus1)
+
+    fmt.Printf("[*] k_start: %s\n", kStart.String())
+    fmt.Printf("[*] k_end:   %s\n", kEnd.String())
+
+    kRange := new(big.Int).Sub(kEnd, kStart)
+    kRange.Add(kRange, big.NewInt(1))
+
+    bar := progressbar.NewOptions64(
+        kRange.Int64(),
+        progressbar.OptionSetDescription("Searching..."),
+        progressbar.OptionSetWriter(os.Stderr),
+        progressbar.OptionShowBytes(false),
+        progressbar.OptionSetWidth(40),
+        progressbar.OptionShowCount(),
+        progressbar.OptionThrottle(100*time.Millisecond),
+        progressbar.OptionSpinnerType(14),
+        progressbar.OptionFullWidth(),
+        progressbar.OptionSetRenderBlankState(true),
+        progressbar.OptionShowElapsedTimeOnFinish(),
+    )
+
+    numWorkers := runtime.NumCPU()
+    runtime.GOMAXPROCS(numWorkers)
+    var wg sync.WaitGroup
+    var foundMutex sync.Mutex
+    outputFile, err := os.Create("found_flags.txt")
+    if err != nil {
+        fmt.Println("[-] err:", err)
+        return
+    }
+    defer outputFile.Close()
+
+    totalWork := new(big.Int).Set(kRange)
+    chunkSize := new(big.Int).Div(totalWork, big.NewInt(int64(numWorkers)))
+    currentK := new(big.Int).Set(kStart)
+    one := big.NewInt(1)
+
+    for i := 0; i < numWorkers; i++ {
+        wg.Add(1)
+        workerKStart := new(big.Int).Set(currentK)
+        var workerKEnd *big.Int
+        if i == numWorkers-1 {
+            workerKEnd = new(big.Int).Set(kEnd)
+        } else {
+            workerKEnd = new(big.Int).Add(workerKStart, chunkSize)
+            workerKEnd.Sub(workerKEnd, one)
+        }
+        if workerKStart.Cmp(kEnd) > 0 {
+            wg.Done()
+            continue
+        }
+        go worker(workerKStart, workerKEnd, pMinus1, r, &wg, bar, &foundMutex, outputFile)
+        currentK.Add(workerKEnd, one)
+    }
+
+    wg.Wait()
+    bar.Finish()
+    fmt.Println("\n[+] Results saved to found_flags.txt.")
+}
+```
+
+```
+idek{tks_f0r_ur_t1ck3t_xD}
 ```
 
 ## Sadness ECC - Revenge
