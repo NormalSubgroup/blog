@@ -1,5 +1,11 @@
 +++
 title = "katex bug"
+
+date = "2025-08-10"
+description = "Bug trace"
+
+[taxonomies]
+tags = ["demo"]
 +++
 
 > Display exceptions, such as inconsistent trailing commas and local restrictions, being pushed to one line, or not being displayed
