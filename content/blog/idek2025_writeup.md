@@ -972,6 +972,62 @@ Exploit 如下题，直接看 `Sadness ECC - Revenge`
 
 ## Happy ECC
 
+### 题目一：Happy ECC - Revenge
+
+这道题是一个基于超椭圆曲线密码学的挑战。我们需要在一个未知的二亏格（genus 2）超椭圆曲线上，计算一个给定点的阶。
+
+#### **解题思路**
+
+核心分为三个步骤：
+1.  **恢复曲线方程**: 由于曲线方程 $y^2 = f(x)$ 中的多项式 $f(x)$ 是未知的，我们首先需要利用题目提供的信息来恢复它。
+2.  **计算群阶**: 在获得完整的曲线定义后，计算其雅可比群（Jacobian group）的总阶。
+3.  **计算点的真阶**: 利用群的总阶和拉格朗日定理，计算出目标点的真实阶。
+
+---
+
+#### **第一步：恢复曲线多项式 $f(x)$**
+
+题目中的超椭圆曲线定义在有限域 $GF(p)$ 上，形式为 $y^2 = f(x)$，其中 $f(x)$ 是一个首一（monic）的5次多项式。曲线的亏格 $g = \lfloor(\deg(f)-1)/2\rfloor = \lfloor(5-1)/2\rfloor = 2$。
+
+在超椭圆曲线的雅可比群中，元素（除子）通常用 **Mumford 表示法** 表示为一个二元组 $(U(x), V(x))$，其中 $U, V$ 都是多项式，且满足以下关键性质：
+1.  $U(x)$ 是首一多项式，且其次数 $\deg(U) \le g$。
+2.  $\deg(V) < \deg(U)$。
+3.  $V(x)^2 \equiv f(x) \pmod{U(x)}$。
+
+这个关系是恢复 $f(x)$ 的基础。我们可以通过与服务器交互，多次选择选项1，获取几个点 $P_i = (U_i, V_i)$。对于每个点，我们都得到一个关于未知多项式 $f(x)$ 的同余方程：
+$$f(x) \equiv V_i(x)^2 \pmod{U_i(x)}$$
+由于 $f(x)$ 的次数为5，而每个 $U_i(x)$ 的次数都为 $g=2$，我们需要足够多的同余方程来唯一确定 $f(x)$。脚本中请求了3个点，得到了一个同余方程组：
+$$\begin{cases} f(x) \equiv V_1(x)^2 \pmod{U_1(x)} \\ f(x) \equiv V_2(x)^2 \pmod{U_2(x)} \\ f(x) \equiv V_3(x)^2 \pmod{U_3(x)} \end{cases}$$
+三个模数 $U_1, U_2, U_3$ 的乘积次数为 $2+2+2=6$，大于 $f(x)$ 的次数5。因此，我们可以使用**多项式中国剩余定理 (Chinese Remainder Theorem for Polynomials)** 来解出这个方程组，从而唯一确定 $f(x)$。`solve.py` 脚本中的 `CRT_list` 函数正是实现了这个功能。
+
+---
+
+#### **第二步：计算雅可比群的阶**
+
+在恢复了 $f(x)$ 后，我们就得到了曲线的完整定义。曲线的雅可比群 $J(C)$ 是一个有限阿贝尔群，其阶（即群中元素的数量）可以通过计算 **Frobenius 自同态的特征多项式** $\chi_C(t)$ 得到。
+雅可比群的阶 $|J(C)|$ 由下式给出：
+$$|J(C)| = \chi_C(1)$$
+SageMath 库提供了直接计算这个多项式的函数 `H.frobenius_polynomial()`。脚本中通过调用 `sum(H.frobenius_polynomial())`，实际上就是计算了 $\chi_C(t)$ 在 $t=1$ 处的值，从而得到了群的总阶 $N = |J(C)|$。
+
+> 似乎别的函数还要再快一些，但快不了多少...
+
+---
+
+#### **第三步：计算点 $G$ 的真实阶**
+
+服务器最后会给出一个挑战点 $G = (G_U, G_V)$，要求我们计算它的阶。根据**拉格朗日定理**，点 $G$ 的阶 $\text{ord}(G)$ 必须整除群的总阶 $N$。
+
+为了找到 $G$ 的**真实阶**（即满足 $k \cdot G = \mathcal{O}$ 的最小正整数 $k$，其中 $\mathcal{O}$ 是单位元），我们采用以下算法：
+1.  计算群阶 $N = |J(C)|$。
+2.  对 $N$ 进行质因数分解：$N = p_1^{e_1} p_2^{e_2} \cdots p_k^{e_k}$。
+3.  初始化一个候选阶 `order_candidate` 为 $N$。
+4.  对每一个质因子 $p_i$，我们不断尝试用它去除 `order_candidate`。只要 $(\text{order\_candidate} / p_i) \cdot G$ 的结果是单位元（在Mumford表示中，单位元是 $(U=1, V=0)$），我们就更新 `order_candidate`：
+    $$\text{order\_candidate} \leftarrow \frac{\text{order\_candidate}}{p_i}$$
+    这个过程一直持续到除以 $p_i$ 后不再是单位元为止。
+5.  遍历完所有质因子后，`order_candidate` 的最终值就是点 $G$ 的真实阶。
+
+将这个阶发送给服务器，即可获得 flag。
+
 ```flag
 idek{find_the_order_of_hyperelliptic_curve_is_soooo_hard:((}
 ```
@@ -1605,7 +1661,7 @@ if __name__ == "__main__":
 
 ## FITM
 
-，也有人用格，但我不会格，于是爆！注意优化一下内存和 GoRoutine 数量即可
+也有人用格，但我不会格，于是爆！注意优化一下内存和 GoRoutine 数量即可
 
 这道题目的名称 "FITM" 暗示了中间人攻击（Man-in-the-Middle），flag 也印证了这点，但我们队伍的实际解法是一种利用数论技巧和暴力搜索相结合的方法来解决一个隐藏数字问题 (Hidden Number Problem)。
 
