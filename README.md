@@ -11,7 +11,7 @@
 
 Start blogging in minutes with [Zola](https://www.getzola.org/) and [tabi](https://github.com/welpo/tabi).
 
-![Screenshot of tabi theme](https://cdn.jsdelivr.net/gh/welpo/tabi@main/light_dark_screenshot.png)
+
 
 ## Quick start
 
