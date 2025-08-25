@@ -1,3 +1,12 @@
++++
+title = "Coppersmith 讲义：从直觉到实现"
+date = "2025-08-25"
+description = "单变量、二元、消元与应用"
+
+[taxonomies]
+tags = ["CTF", "LLL", "Coppersmith", "Cryptography", "Mathematics"]
++++
+
 # Coppersmith 方法讲义：从直觉到实现（单变量、二元、消元与应用）
 
 本讲义基于 Steven Galbraith《Mathematics of Public Key Cryptography》ch19（Coppersmith’s Method and Related Applications）的公开章节，提供一份针对“会一点数论（会看模运算、会 gcd），但不懂格”的读者的系统说明。配套代码为纯手工、零外部依赖的最小可运行实现：单变量小根、二元小根，以及二元消元（结果式）。
@@ -50,11 +59,12 @@
 ## 3. 与论文一致的格构造（Howgrave–Graham 变体）
 
 记 $d=\deg f$。我们构造如下多项式集合（均为整系数）：
+
 $$
 \begin{aligned}
 \mathcal{G}
-= {} & \big\{\, N^{m-i}\, x^j\, f(x)^i : 0\le i<m,\, 0\le j<d \,\big\} \\
-&\cup\, \big\{\, x^j\, f(x)^m : 0\le j<t \,\big\}.
+= {} & \big\{ N^{m-i} x^j f(x)^i : 0\le i<m, 0\le j<d \big\} \\
+&\cup \big\{ x^j f(x)^m : 0\le j<t \big\}.
 \end{aligned}
 $$
 
