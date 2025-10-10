@@ -1,29 +1,5 @@
 {# Local KaTeX auto-render for standard delimiters and robust shortcode rendering #}
 {%- if macros_settings::evaluate_setting_priority(setting="katex", page=page | default(value=""), section=section | default(value=""), default_global_value=false) == "true" -%}
     <script defer src="{{ get_url(path='js/katex_autorender.min.js', trailing_slash=false) | safe }}"></script>
-    <script>
-    document.addEventListener("DOMContentLoaded", function() {
-        try {
-            if (typeof renderMathInElement === 'function') {
-                renderMathInElement(document.body, {
-                    delimiters: [
-                        {left: "$$", right: "$$", display: true},
-                        {left: "\\(", right: "\\)", display: false},
-                        {left: "\\[", right: "\\]", display: true}
-                    ],
-                    ignoredTags: ["script","noscript","style","textarea","pre","code","option"],
-                });
-            }
-        } catch (e) { /* no-op */ }
-
-        // Fallback: render shortcodes that avoid Markdown interference
-        if (window.katex) {
-            document.querySelectorAll('.math-katex').forEach(function(el){
-                try {
-                    window.katex.render(el.textContent, el, { displayMode: (el.dataset.display === 'true') });
-                } catch (e) { /* ignore parse errors */ }
-            });
-        }
-    });
-    </script>
+    <script defer src="{{ get_url(path='js/katex_init.js', trailing_slash=false) | safe }}"></script>
 {%- endif -%}
