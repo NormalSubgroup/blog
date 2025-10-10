@@ -1,0 +1,4 @@
+{# Inline/block KaTeX rendering via client-side katex.render #}
+{%- set display = display | default(value=false) -%}
+<span class="math-katex" data-display="{{ display }}">{{ body | safe }}</span>
+
