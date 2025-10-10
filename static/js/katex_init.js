@@ -45,7 +45,7 @@
         if (ch === '_' && (i===0 || inner[i-1] !== '\\')){ out += '\\\\_'; }
         else { out += ch; }
       }
-      return '\\\\text{' + out + '}';
+      return '\\text{' + out + '}';
     });
   }
   function rebuildWithKatex(el){
@@ -53,7 +53,23 @@
     var txt = el.textContent;
     if (!(/[\$]/.test(txt) || /\\\(|\\\)|\\\[|\\\]/.test(txt))) return;
     var tokens = tokenizeMath(txt);
-    if (!tokens.some(function(x){return x.t==='m';})) return;
+    var hasMath = tokens.some(function(x){return x.t==='m';});
+    if (!hasMath) {
+      var trimmed = txt.trim();
+      // If content uses double backslashes (e.g., \\text), normalise to single backslash for KaTeX
+      var normalised = trimmed.replace(/\\\\/g, "\\");
+      if (/\\\\?[a-zA-Z]+/.test(trimmed) || /\\[a-zA-Z]+/.test(normalised)) {
+        // Try to render whole node as inline math when it looks like TeX but lacks delimiters
+        try {
+          var span = document.createElement('span');
+          window.katex.render(escapeUnderscoresInTextCommand(normalised), span, {displayMode:false, strict:'ignore'});
+          while (el.firstChild) el.removeChild(el.firstChild);
+          el.appendChild(span);
+          el.setAttribute('data-katex-rebuilt','1');
+        } catch (_) {}
+      }
+      return;
+    }
     while (el.firstChild) el.removeChild(el.firstChild);
     tokens.forEach(function(tok){
       if (tok.t==='t'){
@@ -61,7 +77,7 @@
       } else if (tok.t==='m'){
         var content = escapeUnderscoresInTextCommand(tok.s);
         var span = document.createElement('span');
-        try { window.katex.render(content, span, {displayMode: tok.d}); } catch(_) { span.textContent = tok.s; }
+        try { window.katex.render(content, span, {displayMode: tok.d, strict: "ignore"}); } catch(_) { span.textContent = tok.s; }
         el.appendChild(span);
       }
     });
@@ -77,6 +93,9 @@
             {left: "\\[", right: "\\]", display: true}
           ],
           ignoredTags: ["script","noscript","style","textarea","pre","code","option"],
+          preProcess: function (s) { return escapeUnderscoresInTextCommand(s); },
+          errorCallback: function () { /* suppress autorender errors; fallback will handle */ },
+          strict: "ignore",
         });
       } catch (_) {}
     }
