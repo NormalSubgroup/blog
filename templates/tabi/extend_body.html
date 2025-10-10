@@ -1,5 +1,5 @@
 {# Local KaTeX auto-render for standard delimiters and robust shortcode rendering #}
 {%- if macros_settings::evaluate_setting_priority(setting="katex", page=page | default(value=""), section=section | default(value=""), default_global_value=false) == "true" -%}
-    <script defer src="{{ get_url(path='js/katex_autorender.min.js', trailing_slash=false) | safe }}"></script>
-    <script defer src="{{ get_url(path='js/katex_init.js', trailing_slash=false) | safe }}"></script>
+    <script defer src="{{ get_url(path='js/katex_autorender.min.js', trailing_slash=false, cachebust=true) | safe }}"></script>
+    <script defer src="{{ get_url(path='js/katex_init.js', trailing_slash=false, cachebust=true) | safe }}"></script>
 {%- endif -%}

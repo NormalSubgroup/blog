@@ -107,6 +107,35 @@
       document.querySelectorAll('.e-content.body p, .e-content.body li, .e-content.body h1, .e-content.body h2, .e-content.body h3, .e-content.body h4, .e-content.body blockquote, .e-content.body td, .e-content.body th, .e-content.body dd, .e-content.body dt, .e-content.body figcaption').forEach(function(el){
         if (safeContainer(el) && el.getAttribute('data-katex-rebuilt') !== '1') rebuildWithKatex(el);
       });
+
+      // Final pass: walk text nodes to catch inline math without delimiters, even if wrapped in spans/em/strong
+      var root = document.querySelector('.e-content.body');
+      if (root) {
+        var walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, null);
+        var nodes = [];
+        var n;
+        while ((n = walker.nextNode())) {
+          if (!n.parentElement.closest('pre, code')) nodes.push(n);
+        }
+        nodes.forEach(function(tn){
+          var s = tn.textContent.trim();
+          if (!s) return;
+          // Heuristic: looks like TeX (has a macro or \cdot or \frac or \text)
+          if (/\\(text|frac|cdot|sum|int|alpha|beta|gamma)\b/.test(s) || /^\(.*\)$/.test(s)){
+            try {
+              var target = (tn.parentElement && tn.parentElement.childNodes.length === 1 && !tn.parentElement.querySelector('.katex')) ? tn.parentElement : null;
+              var container = target || tn;
+              var span = document.createElement('span');
+              window.katex.render(escapeUnderscoresInTextCommand(s), span, {displayMode:false, strict:'ignore'});
+              if (target) {
+                target.replaceWith(span);
+              } else {
+                tn.parentNode.replaceChild(span, tn);
+              }
+            } catch(_) {}
+          }
+        });
+      }
     }
   }
   if (document.readyState === 'loading') {
