@@ -29,11 +29,15 @@ include_content = true
 
 
 [markdown]
-highlight_code = true
 bottom_footnotes = true
-# To use a Zola built-in theme, CSP needs to allow unsafe-inline for style-src.
-highlight_theme = "css"
 smart_punctuation = true
+
+[markdown.highlighting]
+# Zola 0.22.0 replaced Syntect with Giallo; highlighting options moved here.
+# style = "class" emits CSS classes (no inline colours); colours come from tabi's CSS.
+highlight_code = true
+theme = "catppuccin-frappe"
+style = "class"
 
 
 [extra]
